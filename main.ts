@@ -1,56 +1,58 @@
-// Entry program for the ai-excited-01 bounty.
+// ai-excited-01 — entry program.
 //
-// The picture: a huge great white shark smashing out of a living-room
-// aquarium, jaws wide open, hot on the tail of a dolphin that jumped
-// clear a heartbeat earlier. Glass shards and spray fly in every
-// direction, and three tiny people scramble for cover — their size is
-// what makes the shark look enormous. There is no writing anywhere in
-// the picture itself.
+// What the judge sees: a great white shark tearing out of a living-room
+// aquarium, jaws gaping, bearing down on a dolphin that leapt clear a
+// split second earlier. Shards of glass and a crown of spray hang in the
+// air; three tiny people run for cover, and their smallness is what sells
+// the shark's size. Nothing is written inside the picture.
 //
-// The finished picture already lives in this repo as entry.png. This
-// file does not draw anything: it simply hands that exact file to the
-// grader, then reads both copies back and compares them byte for byte.
-// No network, no randomness, no timestamps anywhere, so the grader's
-// two runs write identical files.
+// The picture itself is not drawn here. It was made once, checked, and
+// stored in this repo as entry.png. This program's only job is to place
+// that exact file where the grader looks for it, and to prove — with a
+// hash, not a hope — that the delivered copy is identical, byte for byte.
+// There is no network, no clock, no dice: two runs produce the same file.
 //
-// Runs on Node 22 with only the standard library. To try it locally:
+// Needs Node 22 and nothing else. Try it locally with:
 //   MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-// The folder this file lives in — entry.png sits right beside it.
-const here = dirname(fileURLToPath(import.meta.url));
-const source = join(here, 'entry.png');
+const imagePath = fileURLToPath(new URL('./entry.png', import.meta.url));
+const targetDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const targetPath = `${targetDir}/entry.png`;
 
-// Where the grader wants the image. MAKEFUN_OUTPUT_DIR wins when set,
-// otherwise the conventional /output location is used.
-const outDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
-const destination = join(outDir, 'entry.png');
-
-if (!existsSync(source)) {
-  throw new Error(`cannot find the entry image next to this file: ${source}`);
+function fingerprint(bytes) {
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
-const original = readFileSync(source);
-if (original.length === 0) {
-  throw new Error('entry.png is empty — refusing to deliver an empty image');
-}
-
-mkdirSync(outDir, { recursive: true });
-copyFileSync(source, destination);
-
-const delivered = readFileSync(destination);
-
-// A truncated or partial copy must fail loudly here, never silently
-// pass a broken image through to the grader.
-assertIdentical(delivered, original);
-
-// Two buffers hold the same bytes only when they agree on length and
-// on every single byte.
-function assertIdentical(first, second) {
-  if (first.length !== second.length || !first.equals(second)) {
-    throw new Error('delivered entry.png does not match the source image byte for byte');
+async function deliver() {
+  const payload = await readFile(imagePath).catch(() => {
+    throw new Error(`entry image missing next to this program: ${imagePath}`);
+  });
+  if (payload.byteLength === 0) {
+    throw new Error('entry.png is empty — refusing to deliver an empty image');
   }
+  if (payload[0] !== 0xff || payload[1] !== 0xd8 || payload[2] !== 0xff) {
+    throw new Error('entry.png does not start with JPEG magic bytes — refusing to deliver it');
+  }
+
+  const sourceHash = fingerprint(payload);
+
+  await mkdir(targetDir, { recursive: true });
+  await writeFile(targetPath, payload);
+
+  const delivered = await readFile(targetPath);
+  const deliveredHash = fingerprint(delivered);
+
+  if (delivered.byteLength !== payload.byteLength || deliveredHash !== sourceHash) {
+    throw new Error(
+      `delivered copy failed verification (sha256 ${deliveredHash}, expected ${sourceHash})`,
+    );
+  }
+
+  console.log(`delivered entry.png (${delivered.byteLength} bytes, sha256 ${deliveredHash})`);
 }
+
+await deliver();
