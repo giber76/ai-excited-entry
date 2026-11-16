@@ -1,32 +1,42 @@
-// ai-excited-01 entry: "Kapan aku makan?" — a giant crocodile bursting out of
-// a coffee cup in a cozy cafe, taunting the judge. The image lives beside
-// this file as entry.png; the program writes those exact bytes to the output
-// directory, so the judge sees them and nothing else.
-// Node 22, standard library only. No network, no randomness: both runs
-// must produce byte-identical output.
+// ai-excited-01 — "Make the AI judge excited".
+// The entry image: a giant great white shark bursting out of a shattered
+// home aquarium in a sunny living room, jaws open, chasing a dolphin that
+// leaps just ahead of it. Water and broken glass explode outward; three
+// tiny panicking people give the scene its scale. No text in the image.
 //
-// Run locally: mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// This program does exactly one thing: it copies the finished image
+// (entry.png, sitting next to this file) into the output directory the
+// grader reads. Nothing is generated while it runs, nothing is fetched,
+// nothing is random — so the grader's two runs write byte-identical files.
+//
+// Node 22, standard library only.
+//
+// Run locally: MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const sourceDir = new URL('.', import.meta.url).pathname;
+const targetDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
+const sourceFile = path.join(sourceDir, 'entry.png');
+const targetFile = path.join(targetDir, 'entry.png');
 
-mkdirSync(outDir, { recursive: true });
-
-// Determinism is a hard requirement: both grader runs must write
-// byte-identical output, so nothing here may depend on time, randomness,
-// or the machine it runs on — the file is copied verbatim, nothing more.
-const pngPath = join(here, 'entry.png');
-let bytes: Buffer;
-try {
-  bytes = readFileSync(pngPath);
-} catch {
-  throw new Error(`entry.png is missing — expected it beside main.ts at ${pngPath}`);
+if (!fs.existsSync(sourceFile)) {
+  throw new Error(`entry.png not found next to main.ts (${sourceFile})`);
 }
-if (bytes.length === 0) {
-  throw new Error('entry.png is empty — refusing to write a zero-byte output image');
+
+const image = fs.readFileSync(sourceFile);
+if (image.length === 0) {
+  throw new Error('entry.png is empty — refusing to write an empty output image');
 }
-writeFileSync(join(outDir, 'entry.png'), bytes);
+
+fs.mkdirSync(targetDir, { recursive: true });
+fs.writeFileSync(targetFile, image);
+
+// Read back what was written and confirm it is the same image: a
+// truncated or partial write must fail loudly here, never silently pass
+// through to the grader.
+const written = fs.readFileSync(targetFile);
+if (written.length !== image.length || !written.equals(image)) {
+  throw new Error('output verification failed — written entry.png differs from the source image');
+}
